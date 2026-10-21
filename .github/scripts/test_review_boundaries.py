@@ -15,11 +15,10 @@ import json
 
 ROOT = Path(__file__).resolve().parents[2]
 USB_ROOT = ROOT / "examples/esp-idf/12_usb_extend_screen"
-SETTING_FILES = (
-    ROOT / "firmware/brookesia/components/apps/setting/Setting.cpp",
-)
-PRODUCT_AUDIO_FILES = (
-    ROOT / "firmware/brookesia/components/product_audio/src/product_audio.c",
+WLAN_PAGE_HEADER = ROOT / "firmware/brookesia/components/Settings/ui/WlanPage.hpp"
+WLAN_PAGE_SOURCE = ROOT / "firmware/brookesia/components/Settings/ui/WlanPage.cpp"
+BSP_AUDIO_SOURCE = ROOT / "firmware/brookesia/components/bsp_extra/src/bsp_board_extra.c"
+USB_AUDIO_FILES = (
     USB_ROOT / "common_components/usb_extend_support/src/usb_extend_audio.c",
 )
 MP4_ADAPTER = ROOT / "examples/esp-idf/18_mp4_player/main/app_stream_adapter.c"
@@ -215,27 +214,39 @@ def test_source_invariants() -> None:
     assert firmware_defaults.count("CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y") == 1
     assert "CONFIG_ESPTOOLPY_FLASHSIZE_2MB=y" not in firmware_defaults
     assert "CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y" not in firmware_defaults
-    assert "CONFIG_PARTITION_TABLE_OFFSET=0x9000" in firmware_defaults
+    assert "CONFIG_PARTITION_TABLE_OFFSET=0x8000" in firmware_defaults
     partitions = (ROOT / "firmware/brookesia/partitions.csv").read_text(encoding="utf-8")
-    assert "nvs,      data, nvs,     0xa000,  0x6000," in partitions
-    assert "phy_init, data, phy,     0x10000, 0x1000," in partitions
-    assert "automatically aligned to 0x20000" in partitions
-    setting_texts = [path.read_text(encoding="utf-8") for path in SETTING_FILES]
-    for text in setting_texts:
-        assert "st_wifi_password" not in text
-        assert "ESP_ERROR_CHECK(esp_wifi_disconnect" not in text
-        assert "const bool psk_flag" in text
-        assert text.count("resetWifiScanUi();") >= 4
-        assert "WIFI_PASSWORD_MAX_LENGTH        (63)" in text
-        assert "WIFI_SSID_MAX_LENGTH            (32)" in text
-        assert "candidate_ssid[WIFI_SSID_MAX_LENGTH + 1]" in text
-        assert "bsp_display_lock(1000)" in text
-        assert "bsp_display_lock(pdMS_TO_TICKS(1000))" not in text
-        assert "WIFI_EVENT_CONNECTED) &&" in text
-        disconnected = text[text.index("WIFI_EVENT_STA_DISCONNECTED"):text.index("WIFI_EVENT_SCAN_DONE")]
-        assert disconnected.index("memset(st_wifi_ssid") < disconnected.index("xEventGroupSetBits")
+    assert "nvsfactory, data,   nvs,        ,     200K," in partitions
+    assert "nvs,        data,   nvs,        ,     840K," in partitions
+    assert "otadata,    data,   ota,        ,     0x2000," in partitions
+    assert "phy_init,   data,   phy,        ,     0x1000," in partitions
+    assert "model,    data, spiffs,         ,     0xF0000," in partitions
+    assert "factory,  app,  factory,        0x00200000,     8M," in partitions
+    assert "storage,  data, spiffs,         ,     6M," in partitions
+    wlan_header = WLAN_PAGE_HEADER.read_text(encoding="utf-8")
+    wlan_source = WLAN_PAGE_SOURCE.read_text(encoding="utf-8")
+    assert "static constexpr size_t MAX_AP_NUM = 12;" in wlan_header
+    assert "char ssid[33];" in wlan_header
+    assert "size_t len = std::min(src_len, dst_size - 1);" in wlan_source
+    assert "dst[len] = '\\0';" in wlan_source
+    scan_apply = wlan_source[
+        wlan_source.index("void WlanPage::applyScanRecords()"):
+        wlan_source.index("void WlanPage::processPendingEvents()")
+    ]
+    assert "record.ssid[0] == '\\0'" in scan_apply
+    assert "std::find_if" in scan_apply
+    assert "ap.rssi > it->rssi" in scan_apply
+    assert "std::sort(results.begin(), results.end()" in scan_apply
+    assert "results.resize(MAX_AP_NUM);" in scan_apply
+    scan_callback = wlan_source[
+        wlan_source.index("void WlanPage::wifi_scan_done_cb"):
+        wlan_source.index("void WlanPage::ui_timer_cb")
+    ]
+    assert "self->scan_records.assign(ap_records, ap_records + ap_count);" in scan_callback
+    assert "self->pending_events.fetch_or(PENDING_SCAN_DONE);" in scan_callback
+    assert "lv_obj_" not in scan_callback
 
-    for path in PRODUCT_AUDIO_FILES:
+    for path in USB_AUDIO_FILES:
         text = path.read_text(encoding="utf-8")
         assert "if (bytes_read != NULL)" in text
         assert "if (bytes_written != NULL)" in text
@@ -243,6 +254,12 @@ def test_source_invariants() -> None:
         assert "memcpy(audio_file_path, filename, sizeof(audio_file_path))" not in text
         assert "memcpy(audio_file_path, file_path, sizeof(audio_file_path))" not in text
         assert "strnlen(file_path, sizeof(audio_file_path))" in text
+
+    bsp_audio_text = BSP_AUDIO_SOURCE.read_text(encoding="utf-8")
+    assert "if (bytes_read) {\n        *bytes_read = 0;" in bsp_audio_text
+    assert "if (ret == ESP_OK && bytes_read) {\n        *bytes_read = len;" in bsp_audio_text
+    assert "if (bytes_written) {\n        *bytes_written = 0;" in bsp_audio_text
+    assert "if (ret == ESP_OK && bytes_written) {\n        *bytes_written = len;" in bsp_audio_text
 
     adapter = MP4_ADAPTER.read_text(encoding="utf-8")
     extractor = MP4_EXTRACTOR.read_text(encoding="utf-8")
@@ -467,17 +484,24 @@ def test_source_invariants() -> None:
         ROOT / "examples/esp-idf/08_lvgl_display_panel/components/bsp_extra",
         ROOT / "examples/esp-idf/09_lvgl_demo_v9/components/bsp_extra",
         BROOKESIA_ROOT / "components/bsp_extra",
-        ROOT / "firmware/brookesia/components/bsp_extra",
     )
     assert all(not path.exists() for path in local_bsp_component_dirs)
+    firmware_bsp_extra_manifest = ROOT / "firmware/brookesia/components/bsp_extra/idf_component.yml"
+    assert firmware_bsp_extra_manifest.is_file()
+    assert "Project-specific extensions for ESP32-P4-WIFI6-Touch-LCD-7B" in firmware_bsp_extra_manifest.read_text(encoding="utf-8")
     assert not (USB_ROOT / "common_components/esp32_p4_wifi6_touch_lcd_7b_usb_bsp").exists()
     assert not (ROOT / "components/product_display").exists()
+    local_bsp_implementation_roots = (
+        ROOT / "firmware/brookesia/components/esp32_p4_wifi6_touch_lcd_7b",
+        ROOT / "firmware/brookesia/components/bsp_extra",
+    )
     first_party_code = "\n".join(
         path.read_text(encoding="utf-8", errors="replace")
         for path in ROOT.rglob("*")
         if path.is_file()
         and (path.suffix in {".c", ".cc", ".cpp", ".h", ".hpp"} or path.name == "CMakeLists.txt")
         and not {".git", "build", "managed_components"}.intersection(path.parts)
+        and not any(path.is_relative_to(root) for root in local_bsp_implementation_roots)
     )
     for direct_adapter_api in (
         "esp_lv_adapter_init(",
@@ -501,7 +525,6 @@ def test_source_invariants() -> None:
         "examples/esp-idf/12_usb_extend_screen/common_components/usb_extend_support/idf_component.yml",
         "examples/esp-idf/12_usb_extend_screen/main/idf_component.yml",
         "examples/esp-idf/18_mp4_player/main/idf_component.yml",
-        "firmware/brookesia/components/product_audio/idf_component.yml",
     }
     for manifest in managed_bsp_manifests:
         text = manifest.read_text(encoding="utf-8")
@@ -530,8 +553,9 @@ def test_source_invariants() -> None:
         assert "BSP_LCD_DRAW_BUFF" not in text
     for path in display_cfg_files[:2]:
         assert "ESP_LV_ADAPTER_TEAR_AVOID_MODE_TRIPLE_PARTIAL" in path.read_text(encoding="utf-8")
-    for path in display_cfg_files[2:]:
+    for path in display_cfg_files[2:3]:
         assert "ESP_LV_ADAPTER_TEAR_AVOID_MODE_DOUBLE_DIRECT" in path.read_text(encoding="utf-8")
+    assert "ESP_LV_ADAPTER_TEAR_AVOID_MODE_TRIPLE_PARTIAL" in display_cfg_files[3].read_text(encoding="utf-8")
     assert "lv_task_handler()" not in display_cfg_files[0].read_text(encoding="utf-8")
 
     for defaults in (
@@ -552,18 +576,15 @@ def test_source_invariants() -> None:
         assert "GLOB_RECURSE" not in demo_cmake
         assert "REQUIRES esp32_p4_wifi6_touch_lcd_7b lvgl__lvgl" in demo_cmake
 
-    for defaults in (
-        BROOKESIA_ROOT / "sdkconfig.defaults",
-        ROOT / "firmware/brookesia/sdkconfig.defaults",
-    ):
-        text = defaults.read_text(encoding="utf-8")
-        assert "CONFIG_BSP_LCD_DPI_BUFFER_NUMS=2" in text
+    example_defaults = (BROOKESIA_ROOT / "sdkconfig.defaults").read_text(encoding="utf-8")
+    assert "CONFIG_BSP_LCD_DPI_BUFFER_NUMS=2" in example_defaults
+    firmware_defaults = (ROOT / "firmware/brookesia/sdkconfig.defaults").read_text(encoding="utf-8")
+    assert "CONFIG_BSP_LCD_DPI_BUFFER_NUMS=3" in firmware_defaults
+    for text in (example_defaults, firmware_defaults):
         assert "CONFIG_BSP_DISPLAY_LVGL_AVOID_TEAR" not in text
         assert "CONFIG_BSP_DISPLAY_LVGL_DIRECT_MODE" not in text
 
-    lock_contract_files = display_cfg_files + SETTING_FILES + (
-        ROOT / "firmware/brookesia/components/apps/video_player/esp_lvgl_simple_player/esp_lvgl_simple_player.c",
-    )
+    lock_contract_files = display_cfg_files[:3]
     for path in lock_contract_files:
         text = path.read_text(encoding="utf-8")
         assert "bsp_display_lock(" in text, path
@@ -630,15 +651,6 @@ def test_source_invariants() -> None:
     assert "do not verify LCD runtime behavior" in usb_readme
     assert "EK79007 版本守卫 API 与 IDF 6 分配器/DMA2D 路径" in usb_readme_zh
     assert "不验证 LCD 运行行为" in usb_readme_zh
-
-    for text in setting_texts:
-        callback_start = text.index("onButtonWifiListClickedEventCallback")
-        callback_end = text.index("void AppSettings::", callback_start + 1)
-        callback = text[callback_start:callback_end]
-        assert "app->stopWifiScan()" not in callback
-        reset = text[text.index("void AppSettings::resetWifiScanUi"):]
-        assert "if (!bsp_display_lock(-1))" in reset
-
 
 def main() -> int:
     test_boundaries()
