@@ -1,5 +1,8 @@
 #include "AboutPage.hpp"
 #include "SettingsUI.hpp"
+#include "esp_app_desc.h"
+#include <cstdio>
+#include <cstring>
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "../Settings.hpp"
@@ -14,6 +17,35 @@ namespace {
 const char *product_name()
 {
     return "ESP32-P4-WIFI6-Touch-LCD-7B";
+}
+
+const char *firmware_version()
+{
+    static char version[7] = {};
+    if (version[0] != '\0') {
+        return version;
+    }
+
+    // Use the firmware build date, including when this file is not recompiled.
+    const char *date = esp_app_get_description()->date;
+    char month_name[4] = {};
+    int day = 0;
+    int year = 0;
+    if (std::sscanf(date, "%3s %d %d", month_name, &day, &year) != 3 ||
+        day < 1 || day > 31 || year < 0) {
+        return "Unknown";
+    }
+    static const char *months[] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    };
+    for (int month = 0; month < 12; ++month) {
+        if (std::strcmp(month_name, months[month]) == 0) {
+            std::snprintf(version, sizeof(version), "%02d%02d%02d", year % 100, month + 1, day);
+            return version;
+        }
+    }
+    return "Unknown";
 }
 
 } // namespace
@@ -64,6 +96,7 @@ namespace esp_brookesia::apps
         settings_ui::add_info_row(list1, nullptr, "Product", product_name(), style_list_btn);
 
         settings_ui::add_section(list1, "Software", style_list_text);
+        settings_ui::add_info_row(list1, nullptr, "Version", firmware_version(), style_list_btn);
         settings_ui::add_info_row(list1, nullptr, "UI Framework", "ESP-Brookesia", style_list_btn);
         return true;
     }

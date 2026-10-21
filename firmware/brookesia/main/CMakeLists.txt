@@ -3,7 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES HardwareApps esp32_p4_wifi6_touch_lcd_7b bsp_extra brookesia_core
              draw SpecAnalyzer MusicPlayer Settings Camera VideoPlayer
-             brookesia_app_calculator XiaozhiApp)
+             brookesia_app_calculator brookesia_app_squareline_demo XiaozhiApp)
 
 target_compile_options(${COMPONENT_LIB} PUBLIC -Wno-missing-field-initializers)
 

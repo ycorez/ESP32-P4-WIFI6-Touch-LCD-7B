@@ -19,6 +19,7 @@
 #include "esp_lib_utils.h"
 
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "nvs_flash.h"
 
 #include "bsp_board_extra.h"
@@ -116,7 +117,7 @@ public:
         lv_obj_set_style_arc_color(spinner_, lv_color_hex(0x313B42), LV_PART_MAIN);
         lv_obj_set_style_arc_color(spinner_, lv_color_hex(0x27C1A8), LV_PART_INDICATOR);
 
-        lv_label_set_text(title_, "ESP32-P4");
+        lv_label_set_text(title_, "ESP32-P4-WIFI6-Touch-LCD-7B");
         lv_obj_set_style_text_font(title_, &lv_font_montserrat_32, LV_PART_MAIN);
         lv_obj_set_style_text_color(title_, lv_color_hex(0xF7F9FA), LV_PART_MAIN);
         lv_obj_align(title_, LV_ALIGN_CENTER, 0, -36);

@@ -51,21 +51,21 @@ LV_IMG_DECLARE(img_app_camera);
 
 namespace esp_brookesia::apps
 {
-    // The sensor streams a portrait frame (800x1280) while the panel is
-    // landscape (1024x600), so the PPA turns the preview a quarter turn. Three
-    // hardware rules drive the geometry:
+    // The OV5647 runs its 800x640 binned mode (the same mode the LCD-7C uses;
+    // the 800x1280 mode has a much stronger colour cast) and the PPA cover-fills
+    // the 1024x600 panel with it. A portrait sensor mode is still turned a
+    // quarter turn. Three hardware rules drive the geometry:
     //   * the SRM scale factor is quantised to 1/16 steps, so a plain float ratio
-    //     (0.8 -> 0.75) shrinks the picture and leaves black bands;
+    //     leaves black bands;
     //   * the scaled output block must stay inside out.pic_w x out.pic_h, so the
     //     picture cannot simply be over-scaled and clipped;
-    //   * the rotated block is placed at the output offset, so an exact-size block
-    //     at (0,0) covers the whole output picture whatever the anchor is.
-    // The crop is therefore derived from the quantised factor so that the rotated
+    //   * the (rotated) block is placed at the output offset, so an exact-size
+    //     block at (0,0) covers the whole output picture whatever the anchor is.
+    // The crop is therefore derived from the quantised factor so that the scaled
     // output is exactly the panel size.
     static constexpr uint32_t CAMERA_PPA_SCALE_STEPS_PER_UNIT = 16;
-
-    // Quarter turn applied to the preview (the panel is mounted rotated).
-    static constexpr ppa_srm_rotation_angle_t CAMERA_PPA_ROTATION = PPA_SRM_ROTATION_ANGLE_270;
+    // Upscale limit searched when no factor gives an exact panel-size output.
+    static constexpr uint32_t CAMERA_PPA_SCALE_SEARCH_STEPS = 16;
 
     struct CoverCropConfig {
         uint32_t crop_x;
@@ -74,7 +74,19 @@ namespace esp_brookesia::apps
         uint32_t crop_h;
         float scale_x;
         float scale_y;
+        ppa_srm_rotation_angle_t rotation;
     };
+
+    // Number of source pixels that the hardware scales to exactly `dst` pixels
+    // at `steps`/16, or 0 when no such count exists. The PPA truncates the
+    // scaled size, so the smallest count that reaches `dst` is the only one.
+    static uint32_t exactKeep(uint32_t dst, uint32_t steps)
+    {
+        constexpr uint32_t STEPS = CAMERA_PPA_SCALE_STEPS_PER_UNIT;
+        const uint64_t need = static_cast<uint64_t>(dst) * STEPS;
+        const uint32_t keep = static_cast<uint32_t>((need + steps - 1) / steps);
+        return (static_cast<uint64_t>(keep) * steps / STEPS == dst) ? keep : 0;
+    }
 
     static CoverCropConfig computeCoverCrop(uint32_t src_w, uint32_t src_h, uint32_t dst_w, uint32_t dst_h)
     {
@@ -86,36 +98,51 @@ namespace esp_brookesia::apps
             .crop_h = src_h,
             .scale_x = 0.0f,
             .scale_y = 0.0f,
+            .rotation = PPA_SRM_ROTATION_ANGLE_0,
         };
 
         if (src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0) {
             return crop;
         }
 
-        // After the quarter turn the sensor frame occupies src_h x src_w: the
-        // panel width is covered by the source height and the panel height by the
-        // source width. Take the smallest 1/16 step that can cover both.
+        // Turn a portrait frame onto a landscape panel (and vice versa). After
+        // the quarter turn the panel width is covered by the source height.
+        const bool rotate = (src_h > src_w) != (dst_h > dst_w);
+        crop.rotation = rotate ? PPA_SRM_ROTATION_ANGLE_270 : PPA_SRM_ROTATION_ANGLE_0;
+        const uint32_t along_w = rotate ? src_h : src_w;
+        const uint32_t along_h = rotate ? src_w : src_h;
+
+        // Smallest 1/16 step that covers both panel directions.
         const uint64_t need_w = static_cast<uint64_t>(dst_w) * STEPS;
         const uint64_t need_h = static_cast<uint64_t>(dst_h) * STEPS;
-        uint32_t steps = LV_MAX(static_cast<uint32_t>((need_w + src_h - 1) / src_h),
-                                static_cast<uint32_t>((need_h + src_w - 1) / src_w));
-        if (steps == 0) {
-            steps = 1;
-        }
-        if (steps > STEPS) {
-            steps = STEPS;
-        }
+        uint32_t steps = LV_MAX(static_cast<uint32_t>((need_w + along_w - 1) / along_w),
+                                static_cast<uint32_t>((need_h + along_h - 1) / along_h));
+        steps = steps ? steps : 1;
 
-        // Keep just enough sensor rows/columns that the rotated, scaled result is
-        // exactly the panel size. Rounding up keeps the panel covered while the
-        // hardware truncation of the product brings it back to the panel size.
-        uint32_t keep_h = static_cast<uint32_t>((need_w + steps - 1) / steps);
-        uint32_t keep_w = static_cast<uint32_t>((need_h + steps - 1) / steps);
-        keep_h = (keep_h < src_h) ? keep_h : src_h;
-        keep_w = (keep_w < src_w) ? keep_w : src_w;
-        keep_h = keep_h ? keep_h : 1;
-        keep_w = keep_w ? keep_w : 1;
+        // Above 1:1 one source pixel spans more than one output pixel, so a step
+        // may have no exact crop; take the next step that has one.
+        uint32_t keep_along_w = 0;
+        uint32_t keep_along_h = 0;
+        for (uint32_t s = steps; s <= steps + CAMERA_PPA_SCALE_SEARCH_STEPS; s++) {
+            const uint32_t kw = exactKeep(dst_w, s);
+            const uint32_t kh = exactKeep(dst_h, s);
+            if (kw && kh && kw <= along_w && kh <= along_h) {
+                steps = s;
+                keep_along_w = kw;
+                keep_along_h = kh;
+                break;
+            }
+        }
+        if (!keep_along_w) {
+            // No exact fit: stay inside the panel and accept a 1px black edge.
+            keep_along_w = LV_MIN(static_cast<uint32_t>(need_w / steps), along_w);
+            keep_along_h = LV_MIN(static_cast<uint32_t>(need_h / steps), along_h);
+        }
+        keep_along_w = keep_along_w ? keep_along_w : 1;
+        keep_along_h = keep_along_h ? keep_along_h : 1;
 
+        const uint32_t keep_w = rotate ? keep_along_h : keep_along_w;
+        const uint32_t keep_h = rotate ? keep_along_w : keep_along_h;
         crop.crop_x = (src_w - keep_w) / 2;
         crop.crop_y = (src_h - keep_h) / 2;
         crop.crop_w = keep_w;
@@ -568,16 +595,16 @@ namespace esp_brookesia::apps
 
         ESP_LOGI(
             ESP_UTILS_LOG_TAG,
-            "Camera preview cover-fills %dx%d rotated 270deg: block %" PRIu32 ",%" PRIu32 " %" PRIu32 "x%" PRIu32
-            " scale %.4f on %dx%d, %d frame buffers",
+            "Camera preview cover-fills %" PRIu32 "x%" PRIu32 " rotated %ddeg: block %" PRIu32 ",%" PRIu32
+            " %" PRIu32 "x%" PRIu32 " scale %.4f on %dx%d, %d frame buffers",
             _camera_width,
             _camera_height,
+            crop.rotation == PPA_SRM_ROTATION_ANGLE_270 ? 270 : 0,
             crop.crop_x,
             crop.crop_y,
             crop.crop_w,
             crop.crop_h,
             crop.scale_x,
-            crop.scale_y,
             BSP_LCD_H_RES,
             BSP_LCD_V_RES,
             CONFIG_BSP_LCD_DPI_BUFFER_NUMS
@@ -709,7 +736,7 @@ namespace esp_brookesia::apps
         srm_config.out.block_offset_y = 0;
         srm_config.out.srm_cm = CAMERA_PPA_COLOR_MODE;
 
-        srm_config.rotation_angle = CAMERA_PPA_ROTATION;
+        srm_config.rotation_angle = crop.rotation;
         srm_config.scale_x = crop.scale_x;
         srm_config.scale_y = crop.scale_y;
         // Match the LCD-X/4B/5/Platform camera orientation: the previous 180
