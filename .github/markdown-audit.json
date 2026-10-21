@@ -4,6 +4,7 @@
       "category": "first_party_customer",
       "patterns": [
         "firmware/brookesia/components/Camera/config/README.md",
+        "firmware/brookesia/components/Camera/config/README_ZH.md",
         "firmware/brookesia/components/HardwareApps/README.md",
         "firmware/brookesia/components/HardwareApps/README_ZH.md"
       ]

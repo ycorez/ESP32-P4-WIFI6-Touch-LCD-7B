@@ -1,5 +1,7 @@
 # OV5647 ISP white balance
 
+[简体中文](README_ZH.md)
+
 `ov5647_ipa.json` copies the sensor driver's default IPA configuration and
 adds a gray-world AWB module. Both `sdkconfig.defaults` and the local
 `sdkconfig` select this project-owned file through the sensor driver's custom
