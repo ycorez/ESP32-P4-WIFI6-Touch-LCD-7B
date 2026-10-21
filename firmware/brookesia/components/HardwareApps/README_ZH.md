@@ -14,10 +14,9 @@ RS485 与 CAN 使用固定的 `ESP_3V3` GPIO 电源域，不依赖 VO4。VO4 为
 GPIO39-GPIO48 VDD_IO_5 域供电并由 BSP 持有；开发板使用 GPIO39-GPIO44 连接
 SDMMC，GPIO45 控制卡电源。
 
-开发板电路和引脚证据见
-[`../../../../docs/board_ZH.md`](../../../../docs/board_ZH.md)；导入的源文件与哈希记录见
-[`../../../../schematic/README_ZH.md`](../../../../schematic/README_ZH.md) 和
-[`../../../../docs/sources_ZH.md`](../../../../docs/sources_ZH.md)。
+仓库中的板级 profile 和验证边界见
+[`../../../../docs/ESP32P4_REVISION_CONFIG_ZH.md`](../../../../docs/ESP32P4_REVISION_CONFIG_ZH.md)。
+此公开仓库不包含本地原理图或源文件哈希索引。
 
 这些应用随交付固件一起编译，但未烧录，也没有和实体 RS485/CAN 对端进行测试。真实
 CAN 总线需要对端确认和适当终端；成功打开 UI 或编译不能说明总线健康。

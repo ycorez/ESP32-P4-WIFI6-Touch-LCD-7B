@@ -4,11 +4,7 @@
 
 ## 简介
 
-[Phone](../systems/phone/) 是一个类似于智能手机的系统 UI，在各种不同尺寸和分辨率屏幕的 ESP 开发板 上的运行效果如下所示：
-
-<div align="center">
-    <img src="https://dl.espressif.com/AE/esp-dev-kits/esp_ui_phone_demo_esp.jpg" alt ="运行效果" width="750">
-</div>
+[Phone](../systems/phone/) 是一套面向不同尺寸和分辨率 ESP 开发板屏幕的智能手机风格系统 UI。
 
 具有以下特性：
 

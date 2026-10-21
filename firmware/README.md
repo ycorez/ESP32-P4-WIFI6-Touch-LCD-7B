@@ -13,19 +13,20 @@ factory-only image or the separately maintained `brookesia/` source project.
 
 | Path | Purpose |
 | --- | --- |
-| `ESP32-P4-WIFI6-Touch-LCD-7B-FactoryOnly.bin` | Existing prebuilt factory-only binary |
+| `ESP32-P4-WIFI6-Touch-LCD-7B-FactoryOnly.bin` | Updated prebuilt factory-only binary |
 | `brookesia/` | Buildable ESP-Brookesia firmware source |
 
 ## Factory Binary Integrity
 
-The factory-only binary is an immutable delivery artifact with SHA-256:
+The checked-in factory-only binary has SHA-256:
 
 ```text
-3a60bb19b90f04914ac1173d9a63df19eeb3626662c72d7d631028aded00c6df
+124bea4a483e6d9ca7ce79f47e55a49ff889a8df23d8dfd680257f62fc212c5b
 ```
 
-The lightweight repository check verifies this identity. It does not rebuild,
-repackage, or claim hardware validation for the binary.
+The lightweight repository check verifies this identity. It does not verify
+build provenance, rebuild or repackage the image, or establish hardware
+validation.
 
 ## Brookesia Source
 

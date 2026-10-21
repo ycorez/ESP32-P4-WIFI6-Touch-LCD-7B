@@ -16,11 +16,9 @@ RS485 and CAN use fixed `ESP_3V3` GPIO domains and do not depend on VO4. VO4
 supplies the complete GPIO39-GPIO48 VDD_IO_5 bank and is owned by the BSP; the
 board uses GPIO39-GPIO44 for SDMMC and GPIO45 for card-power control.
 
-The board circuit and pin evidence is in
-[`../../../../docs/board.md`](../../../../docs/board.md); the imported source
-file and its hash record are in
-[`../../../../schematic/README.md`](../../../../schematic/README.md) and
-[`../../../../docs/sources.md`](../../../../docs/sources.md).
+The repository's board-profile and validation boundaries are documented in
+[`../../../../docs/ESP32P4_REVISION_CONFIG.md`](../../../../docs/ESP32P4_REVISION_CONFIG.md).
+This public repository does not include a local schematic or source-file hash index.
 
 These applications compile with the delivery firmware but were not flashed or
 tested with a physical RS485/CAN peer. A real CAN bus needs peer acknowledgement
